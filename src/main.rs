@@ -4,6 +4,8 @@ use std::io::Write;
 use std::path::Path;
 use reqwest::{get};
 use serde::{Deserialize, Serialize};
+use clap::{Parser, Subcommand};
+use serde_json::Value;
 
 #[derive(Deserialize)]
 struct APIResponse {
@@ -12,23 +14,47 @@ struct APIResponse {
     response: serde_json::Value
 }
 
+#[derive(Parser, Debug)]
+#[command(version, about, long_about = None)]
+struct Args {
+    url: Option<String>,
+    #[command(subcommand)]
+    commands: Option<Commands>,
+}
+
+#[derive(Subcommand, Debug, Clone)]
+enum Commands {
+    Save,
+}
+
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn Error>> {
-    let url = "https://themealdb.com/api/json/v1/1/lookup.php?i=53049";
+async fn main() {
+    let args = Args::parse();
 
-    let resp = match get(url).await {
-        Ok(resp) => resp,
-        Err(err) => {
-            return Err(Box::new(err) as Box<dyn Error>);
+    println!("{:?}", args);
+
+    if let Some(url) = args.url {
+        let resp = match get(&url).await {
+            Ok(resp) => resp,
+            Err(err) => {
+                std::process::exit(1);
+                // return Err(Box::new(err) as Box<dyn Error>);
+            }
+        };
+
+        let json: Value = match resp.json().await {
+            Ok(json) => json,
+            Err(err) => {
+                eprintln!("Failed to parse JSON: {}", err);
+                std::process::exit(1);
+            }
+        };
+
+        if let Err(e) = write_to_file("the_meal_db.json", &json) {
+            eprintln!("Failed to write to file: {}", e);
+            std::process::exit(1);
         }
-    };
-
-    let json: serde_json::Value = resp.json().await?;
-    if let Err(e) = write_to_file("the_meal_db.json", &json) {
-        eprintln!("Failed to write to file: {}", e);
-        return Err(e);
     }
-    Ok(())
 }
  fn write_to_file<T: Serialize>(filename: &str, data: &T) -> Result<(), Box<dyn Error>> {
     let json_data = match serde_json::to_string(data) {
